@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { IngredientInput } from './components/IngredientInput';
@@ -13,16 +13,34 @@ import { Footer } from './components/Footer';
 import { sampleRecipes } from './data/recipes';
 import { initialUseSoonIngredients } from './data/initialUseSoon';
 import { parseIngredientsInput, matchRecipes } from './utils/ingredientMatcher';
+import { generateGemmaRecipe } from './services/gemmaService';
 
 export function App() {
-  // Pre-fill with sample beginner ingredients so demo works immediately out of the box
   const [ingredientsString, setIngredientsString] = useState('bread, eggs, potatoes, tomatoes');
   const [userHasSearched, setUserHasSearched] = useState(true);
   
+  // Camera & Multi-Image Upload State
+  const [uploadedImages, setUploadedImages] = useState([]);
+
+  // Moving Cursor Glow Position
+  const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      setMousePos({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
   const [useSoonItems, setUseSoonItems] = useState(initialUseSoonIngredients);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [mealsRescuedCount, setMealsRescuedCount] = useState(4);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Gemma 4 AI Generation Shared State
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState(null);
 
   // Show a brief toast notification
   const showToast = (msg) => {
@@ -42,21 +60,53 @@ export function App() {
     return matchRecipes(sampleRecipes, activeIngredientsList);
   }, [activeIngredientsList]);
 
-  // Handle Find Recipes button click
+  // Function to call Gemma 4 via backend (supports text + camera/gallery images)
+  const triggerGemmaAi = async (optionalExpiryNote = '') => {
+    if (activeIngredientsList.length === 0 && uploadedImages.length === 0) {
+      showToast('Please enter an ingredient or upload a food photo first!');
+      return;
+    }
+
+    setAiLoading(true);
+
+    try {
+      const enrichedUseSoon = [...useSoonItems];
+      if (optionalExpiryNote && optionalExpiryNote.trim()) {
+        enrichedUseSoon.push({
+          name: 'User Expiry Note',
+          notes: optionalExpiryNote.trim(),
+          daysLeft: 1
+        });
+      }
+
+      const response = await generateGemmaRecipe(activeIngredientsList, enrichedUseSoon, uploadedImages);
+      setAiResult(response);
+      showToast(`Gemma 4 created your custom recipe!`);
+    } catch (err) {
+      console.error('AI generation error:', err);
+      showToast(err.message || 'Error communicating with Gemma 4.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Handle Find Recipes button click - triggers Gemma 4 AI generation
   const handleFindRecipes = () => {
     setUserHasSearched(true);
-    const element = document.getElementById('recipes');
+    triggerGemmaAi();
+    const element = document.getElementById('gemma-ai');
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
     }
-    showToast(`Found matching recipes for your ${activeIngredientsList.length} ingredients!`);
   };
 
-  // Clear entered ingredients
+  // Clear entered ingredients & images
   const handleClear = () => {
     setIngredientsString('');
+    setUploadedImages([]);
     setUserHasSearched(false);
-    showToast('Cleared ingredient input.');
+    setAiResult(null);
+    showToast('Cleared ingredients & photos.');
   };
 
   // Add an item from the "Use Soon" shelf into the search bar
@@ -102,7 +152,7 @@ export function App() {
   const handleRemoveUseSoonItem = (id) => {
     setUseSoonItems((prev) => prev.filter((item) => item.id !== id));
     setMealsRescuedCount((prev) => prev + 1);
-    showToast('Ingredient used! Community rescue score updated.');
+    showToast('Ingredient used! Community score updated.');
   };
 
   // Add new item to Use Soon shelf
@@ -137,7 +187,20 @@ export function App() {
   };
 
   return (
-    <div className="app-container">
+    <div className="app-container" style={{ position: 'relative' }}>
+      {/* Moving Colorful Blurry Background with Cursor Spotlight */}
+      <div className="cursor-ambient-container" aria-hidden="true">
+        <div className="ambient-orb-1" />
+        <div className="ambient-orb-2" />
+        <div className="ambient-orb-3" />
+        <div
+          className="interactive-cursor-glow"
+          style={{
+            transform: `translate(${mousePos.x}px, ${mousePos.y}px) translate(-50%, -50%)`
+          }}
+        />
+      </div>
+
       {/* Toast Notification */}
       {toastMessage && (
         <div style={{
@@ -145,13 +208,13 @@ export function App() {
           bottom: '24px',
           right: '24px',
           zIndex: 9999,
-          background: '#1b4332',
+          background: '#064e3b',
           color: '#ffffff',
           padding: '0.85rem 1.4rem',
           borderRadius: '9999px',
           boxShadow: '0 10px 25px rgba(0, 0, 0, 0.25)',
           fontSize: '0.92rem',
-          fontWeight: 600,
+          fontWeight: 700,
           display: 'flex',
           alignItems: 'center',
           gap: '0.6rem',
@@ -165,21 +228,32 @@ export function App() {
       {/* Main Navigation Bar */}
       <Navbar onNavigate={handleNavigate} onOpenSafety={handleOpenSafety} />
 
-      <main className="main-content">
-        {/* Hero Section */}
-        <Hero
-          onStartSearch={() => handleNavigate('search')}
-          recipeCount={sampleRecipes.length}
-        />
+      <main className="main-content" style={{ position: 'relative', zIndex: 1 }}>
+        {/* Clean, Non-Stuffy Hero Section */}
+        <Hero />
 
-        {/* Ingredient Search Input with Comma Separation & Quick Staples */}
+        {/* Input Card with Text + Camera / Gallery Upload */}
         <IngredientInput
           ingredientsString={ingredientsString}
           setIngredientsString={setIngredientsString}
           activeIngredientsList={activeIngredientsList}
+          uploadedImages={uploadedImages}
+          setUploadedImages={setUploadedImages}
           onFindRecipes={handleFindRecipes}
           onClear={handleClear}
           onAddFromUseSoon={handleAddAllFromUseSoon}
+          isAiLoading={aiLoading}
+        />
+
+        {/* Google Gemma 4 AI Chef Section */}
+        <GemmaAiChef
+          activeIngredientsList={activeIngredientsList}
+          uploadedImages={uploadedImages}
+          useSoonItems={useSoonItems}
+          loading={aiLoading}
+          resultData={aiResult}
+          onTriggerAi={triggerGemmaAi}
+          onSaveToImpact={() => setMealsRescuedCount(prev => prev + 1)}
         />
 
         {/* Use Soon Shelf Section */}
@@ -188,13 +262,6 @@ export function App() {
           onAddIngredientToSearch={handleAddIngredientToSearch}
           onRemoveItem={handleRemoveUseSoonItem}
           onAddNewItem={handleAddNewUseSoonItem}
-        />
-
-        {/* Google Gemma Open-Source AI Chef Section */}
-        <GemmaAiChef
-          activeIngredientsList={activeIngredientsList}
-          useSoonItems={useSoonItems}
-          onSaveToImpact={() => setMealsRescuedCount(prev => prev + 1)}
         />
 
         {/* Recipe Cards List with Usable & Missing Breakdown */}
@@ -222,7 +289,7 @@ export function App() {
         />
       )}
 
-      {/* Footer */}
+      {/* Clean Footer */}
       <Footer />
     </div>
   );

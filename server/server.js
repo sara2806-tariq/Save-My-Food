@@ -9,11 +9,12 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Supported Gemma 4 model on Gemini API
-// Confirmed supported model IDs: gemma-4-26b-a4b-it, gemma-4-31b-it
 const GEMMA_MODEL = process.env.GEMMA_MODEL || 'gemma-4-26b-a4b-it';
 
 app.use(cors());
-app.use(express.json());
+// Support large base64 image payloads up to 25mb
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -27,106 +28,113 @@ app.get('/api/health', (req, res) => {
 
 /**
  * POST /api/generate-recipe
- * Body: { ingredients: string[], useSoonItems?: Array<{ name: string, daysLeft?: number, quantity?: string }> }
+ * Body: { 
+ *   ingredients?: string[], 
+ *   images?: Array<{ mimeType: string, data: string }>,
+ *   useSoonItems?: Array<{ name: string, daysLeft?: number, notes?: string }> 
+ * }
  */
 app.post('/api/generate-recipe', async (req, res) => {
   try {
-    const { ingredients, useSoonItems = [] } = req.body;
+    const { ingredients = [], images = [], useSoonItems = [] } = req.body;
 
-    // 1. Input Validation
-    if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
+    const cleanIngredients = Array.isArray(ingredients)
+      ? ingredients.map(i => (typeof i === 'string' ? i.trim() : '')).filter(i => i.length > 0)
+      : [];
+
+    const validImages = Array.isArray(images)
+      ? images.filter(img => img && img.data && img.mimeType)
+      : [];
+
+    // Validation: Require either text ingredients OR uploaded photos/camera shots
+    if (cleanIngredients.length === 0 && validImages.length === 0) {
       return res.status(400).json({
         error: 'Input Validation Failed',
-        message: 'Please provide at least one ingredient (e.g. bread, eggs, tomatoes).'
+        message: 'Please provide at least one ingredient name or upload a photo of food in your home.'
       });
     }
 
-    const cleanIngredients = ingredients
-      .map(i => (typeof i === 'string' ? i.trim() : ''))
-      .filter(i => i.length > 0);
-
-    if (cleanIngredients.length === 0) {
-      return res.status(400).json({
-        error: 'Input Validation Failed',
-        message: 'Ingredients list cannot be blank. Please enter comma-separated ingredients.'
-      });
-    }
-
-    // 2. Validate API Key
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === 'your_gemini_api_key_here') {
       return res.status(503).json({
         error: 'GEMINI_API_KEY_MISSING',
-        message: 'GEMINI_API_KEY environment variable is not configured on the backend server. Please create a .env file with your valid Gemini API key.',
+        message: 'GEMINI_API_KEY environment variable is not configured in .env. Please set your Gemini API key.',
         fallbackAvailable: true
       });
     }
 
-    // 3. Construct Gemma 4 Zero-Waste & Food Safety Prompt
     const expiryContext = useSoonItems.length > 0
-      ? `\nHigh-priority near-expiry ingredients:\n${useSoonItems.map(item => `- ${item.name} (${item.daysLeft !== undefined ? `${item.daysLeft} day(s) left` : 'expiring soon'}${item.notes ? `: ${item.notes}` : ''})`).join('\n')}`
+      ? `\nHigh-priority near-expiry items from fridge/pantry to rescue first:\n${useSoonItems.map(item => `- ${item.name} (${item.daysLeft !== undefined ? `${item.daysLeft} day(s) left` : 'expiring soon'}${item.notes ? `: ${item.notes}` : ''})`).join('\n')}`
       : '';
 
-    const systemInstruction = `You are SaveMyFood's culinary AI assistant powered by the open-weight Google Gemma 4 model (${GEMMA_MODEL}) through the Gemini API.
-Your mission is to help people make delicious, budget-friendly meals using leftover or near-expiry ingredients to prevent food waste.
+    const systemInstruction = `You are SaveMyFood's AI Chef powered by Google Gemma 4 (${GEMMA_MODEL}) via the Gemini API.
+Your mission is to help people prepare delicious, nourishing, beginner-friendly meals from their leftover or near-expiry ingredients to prevent kitchen waste.
+If photos are provided, inspect the images to identify any food, produce, pantry items, or groceries shown, and build a recipe around them.
 
 CRITICAL FOOD SAFETY RULES:
-1. NEVER suggest eating spoiled, moldy, sour, slimy, or discolored food.
-2. Explicitly warn the user that food is NOT guaranteed safe merely because it has not passed its printed expiry date (storage temperature, broken seals, and microbial growth can spoil food earlier).
-3. If any ingredient is doubtful, advise discarding it safely.
-4. Recommend thorough cooking of perishable items (eggs, meats, refrigerated rice).
+1. NEVER suggest eating spoiled, moldy, sour-smelling, or slimy food.
+2. Explicitly warn that food is NOT guaranteed safe merely because it is before its printed expiry date.
+3. Advise discarding questionable or unsafe food.
+4. Recommend thorough cooking of meats, eggs, and refrigerated grains.
 
 Respond ONLY with a single valid JSON code block enclosed in \`\`\`json and \`\`\` with this exact structure:
 \`\`\`json
 {
   "title": "Creative recipe name",
   "description": "Short appetizing description explaining how it rescues the ingredients",
+  "detectedFromImages": ["list of ingredients detected from the uploaded photos (if any)"],
   "prepTime": "e.g. 5 mins",
   "cookTime": "e.g. 10 mins",
   "totalMinutes": 15,
   "difficulty": "Easy",
   "servings": "2 servings",
-  "ingredientsYouCanUse": ["list of user-provided ingredients used in this recipe"],
-  "missingIngredients": ["list of common staple ingredients the user still needs to add"],
+  "ingredientsYouCanUse": ["list of available/detected ingredients used in this recipe"],
+  "missingIngredients": ["list of basic pantry staples needed"],
   "instructions": [
     "Step 1 instruction",
     "Step 2 instruction"
   ],
   "zeroWasteTip": "Practical tip on preserving, storing, or repurposing scraps",
-  "foodSafetyWarning": "Explicit, specific safety warning about checking freshness and not relying solely on dates"
+  "foodSafetyWarning": "Explicit freshness check warning (do not rely solely on printed dates)"
 }
 \`\`\``;
 
-    const userPrompt = `I have the following ingredients:
-User Ingredients: ${cleanIngredients.join(', ')}
+    const userPrompt = `Here are the items available in my home:
+${cleanIngredients.length > 0 ? `Entered Ingredients: ${cleanIngredients.join(', ')}` : ''}
+${validImages.length > 0 ? `I also attached ${validImages.length} photo(s) of my food/fridge. Please identify the ingredients in the images and use them.` : ''}
 ${expiryContext}
 
-Create a beginner-friendly recipe that uses as many of my provided ingredients as possible. Clearly separate the ingredients I can use from any missing pantry staples I need. Include step-by-step instructions, prep time, zero-waste tips, and a rigorous food safety reminder.`;
+Formulate a delicious zero-waste meal I can make today. Separate what I can use from any missing staples.`;
 
-    // 4. Call Gemma 4 through Gemini API endpoint
-    // Supported endpoint: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMMA_MODEL}:generateContent?key=${apiKey}`;
 
-    const requestBody = {
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: `${systemInstruction}\n\n${userPrompt}` }
-          ]
+    // Build multimodal payload
+    const parts = [];
+
+    // Add image parts if provided
+    for (const img of validImages) {
+      parts.push({
+        inlineData: {
+          mimeType: img.mimeType,
+          data: img.data
         }
-      ],
+      });
+    }
+
+    // Add instruction and text prompt
+    parts.push({ text: `${systemInstruction}\n\n${userPrompt}` });
+
+    const requestBody = {
+      contents: [{ role: 'user', parts }],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 2500
+        maxOutputTokens: 3000
       }
     };
 
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
     });
 
@@ -134,18 +142,17 @@ Create a beginner-friendly recipe that uses as many of my provided ingredients a
       const errorText = await apiResponse.text();
       console.error(`Gemini API error (${apiResponse.status}):`, errorText);
 
-      let userFriendlyMessage = `Gemma 4 API request failed with status ${apiResponse.status}.`;
+      let userFriendlyMessage = `Gemma 4 API request failed (${apiResponse.status}).`;
       if (apiResponse.status === 400) {
-        userFriendlyMessage = `Invalid request to Gemma 4 API. Check your model ID (${GEMMA_MODEL}) or prompt parameters.`;
+        userFriendlyMessage = `Invalid request to Gemma 4 API. Please check image format or model parameters.`;
       } else if (apiResponse.status === 403 || apiResponse.status === 401) {
-        userFriendlyMessage = 'Invalid or unauthorized GEMINI_API_KEY. Please verify your API key in the backend .env file.';
+        userFriendlyMessage = 'Invalid or unauthorized GEMINI_API_KEY. Please verify your API key in .env.';
       } else if (apiResponse.status === 429) {
-        userFriendlyMessage = 'Gemini API rate limit reached. Please wait a moment before trying again.';
+        userFriendlyMessage = 'Gemini API rate limit reached. Please wait a few seconds and try again.';
       }
 
       return res.status(apiResponse.status).json({
         error: 'GEMINI_API_ERROR',
-        status: apiResponse.status,
         message: userFriendlyMessage,
         details: errorText,
         fallbackAvailable: true
@@ -154,17 +161,17 @@ Create a beginner-friendly recipe that uses as many of my provided ingredients a
 
     const data = await apiResponse.json();
 
-    // In Gemma 4 (reasoning model), extract the non-thought answer parts
-    const parts = data?.candidates?.[0]?.content?.parts || [];
-    const nonThought = parts.filter(p => !p.thought);
-    const targetParts = nonThought.length > 0 ? nonThought : parts;
+    // Extract non-thought parts (Gemma 4 thinking trace separation)
+    const rawParts = data?.candidates?.[0]?.content?.parts || [];
+    const nonThought = rawParts.filter(p => !p.thought);
+    const targetParts = nonThought.length > 0 ? nonThought : rawParts;
     const generatedText = targetParts.map(p => p.text).join('\n').trim();
 
     if (!generatedText) {
       throw new Error('No content returned from Gemma 4 model.');
     }
 
-    // 5. Parse JSON from model output
+    // Parse JSON
     let jsonString = generatedText;
     const jsonMatch = generatedText.match(/```json\s*([\s\S]*?)\s*```/i) || generatedText.match(/```\s*([\s\S]*?)\s*```/i);
     if (jsonMatch) {
@@ -178,7 +185,6 @@ Create a beginner-friendly recipe that uses as many of my provided ingredients a
 
     const parsedRecipe = JSON.parse(jsonString.trim());
 
-    // 6. Return standard structured response
     return res.json({
       success: true,
       isAiGenerated: true,
@@ -186,7 +192,8 @@ Create a beginner-friendly recipe that uses as many of my provided ingredients a
       recipe: {
         id: `gemma4-ai-${Date.now()}`,
         title: parsedRecipe.title || 'Gemma 4 Custom Zero-Waste Meal',
-        description: parsedRecipe.description || 'Custom meal generated with Google Gemma 4.',
+        description: parsedRecipe.description || 'Custom meal formulated with Google Gemma 4.',
+        detectedFromImages: parsedRecipe.detectedFromImages || [],
         prepTime: parsedRecipe.prepTime || '5 mins',
         cookTime: parsedRecipe.cookTime || '10 mins',
         totalMinutes: parsedRecipe.totalMinutes || 15,
@@ -195,7 +202,7 @@ Create a beginner-friendly recipe that uses as many of my provided ingredients a
         ingredientsYouCanUse: Array.isArray(parsedRecipe.ingredientsYouCanUse) ? parsedRecipe.ingredientsYouCanUse : cleanIngredients,
         missingIngredients: Array.isArray(parsedRecipe.missingIngredients) ? parsedRecipe.missingIngredients : [],
         instructions: Array.isArray(parsedRecipe.instructions) ? parsedRecipe.instructions : [generatedText],
-        zeroWasteTip: parsedRecipe.zeroWasteTip || 'Store unused portions in an airtight container in the fridge.',
+        zeroWasteTip: parsedRecipe.zeroWasteTip || 'Store remaining portions chilled to prevent waste.',
         foodSafetyWarning: parsedRecipe.foodSafetyWarning || 'Inspect all items before use. An ingredient is not guaranteed safe just because it has not passed its expiry date. Discard any item showing mold or foul odor.'
       }
     });
@@ -212,9 +219,8 @@ Create a beginner-friendly recipe that uses as many of my provided ingredients a
 
 app.listen(PORT, () => {
   console.log(`===============================================`);
-  console.log(` SaveMyFood Backend Server Running`);
-  console.log(` Port:    http://localhost:${PORT}`);
-  console.log(` Model:   ${GEMMA_MODEL}`);
+  console.log(` SaveMyFood Backend Running (Port: ${PORT})`);
+  console.log(` Model: ${GEMMA_MODEL}`);
   console.log(` API Key: ${process.env.GEMINI_API_KEY ? 'Configured (Hidden)' : 'MISSING (Check .env)'}`);
   console.log(`===============================================`);
 });
