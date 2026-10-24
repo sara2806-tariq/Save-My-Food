@@ -1,5 +1,5 @@
 import React from 'react';
-import { Utensils, Clock, ShieldAlert, Sparkles } from 'lucide-react';
+import { Utensils, Clock, ShieldAlert, Sparkles, Bot } from 'lucide-react';
 
 export function Navbar({ onNavigate, onOpenSafety }) {
   return (
@@ -20,6 +20,16 @@ export function Navbar({ onNavigate, onOpenSafety }) {
           >
             <Sparkles size={16} />
             <span>Recipe Finder</span>
+          </button>
+
+          <button 
+            type="button"
+            className="nav-link" 
+            onClick={() => onNavigate('gemma-ai')}
+            style={{ color: '#15803d', fontWeight: 700 }}
+          >
+            <Bot size={16} />
+            <span>Gemma AI Chef</span>
           </button>
 
           <button 

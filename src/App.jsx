@@ -3,6 +3,7 @@ import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { IngredientInput } from './components/IngredientInput';
 import { UseSoonShelf } from './components/UseSoonShelf';
+import { GemmaAiChef } from './components/GemmaAiChef';
 import { RecipeList } from './components/RecipeList';
 import { RecipeModal } from './components/RecipeModal';
 import { SafetyGuide } from './components/SafetyGuide';
@@ -187,6 +188,13 @@ export function App() {
           onAddIngredientToSearch={handleAddIngredientToSearch}
           onRemoveItem={handleRemoveUseSoonItem}
           onAddNewItem={handleAddNewUseSoonItem}
+        />
+
+        {/* Google Gemma Open-Source AI Chef Section */}
+        <GemmaAiChef
+          activeIngredientsList={activeIngredientsList}
+          useSoonItems={useSoonItems}
+          onSaveToImpact={() => setMealsRescuedCount(prev => prev + 1)}
         />
 
         {/* Recipe Cards List with Usable & Missing Breakdown */}

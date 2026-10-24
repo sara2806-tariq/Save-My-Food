@@ -2,7 +2,7 @@
 
 > **Student Project Demo:** A zero-waste cooking web application designed to help people use leftover or near-expiry ingredients to prepare delicious, budget-friendly meals instead of discarding them.
 
-Built with **React**, **Vite**, **JavaScript**, and clean **Vanilla CSS**. Operates 100% locally in the browser with **no external database, no paid API, and no API keys required**.
+Built with **React**, **Vite**, **JavaScript**, and clean **Vanilla CSS**, with a secure **Node.js/Express** backend that calls **Google Gemma 4** (open-weight model family) via the **Gemini API**.
 
 ---
 
@@ -11,101 +11,97 @@ Built with **React**, **Vite**, **JavaScript**, and clean **Vanilla CSS**. Opera
 ### 1. Prerequisites
 Ensure you have **Node.js** (v18+) and **npm** installed on your computer.
 
-### 2. Run the Development Server
-Open your terminal in the project directory (`SaveMyFood`) and run:
+### 2. Configure Backend Environment Variable (Never committed to Git!)
+1. Create a `.env` file in the project root:
+   ```bash
+   cp .env.example .env
+   ```
+2. Open `.env` and set your Google AI Studio API key:
+   ```env
+   GEMINI_API_KEY=AIzaSyYourActualKeyHere
+   PORT=3001
+   GEMMA_MODEL=gemma-4-26b-a4b-it
+   ```
+   > 🔒 **Security Notice:** `.env` is listed in `.gitignore` and is **never** committed to GitHub or exposed in frontend code.
 
+### 3. Run Both Frontend and Backend
+
+You have two convenient options:
+
+#### Option A: One Single Command (Recommended)
 ```bash
-# Start the local development server
-npm run dev
+npm run start
 ```
+*This starts both the backend API (`http://localhost:3001`) and the Vite frontend (`http://localhost:5173`) concurrently.*
+
+#### Option B: Separate Terminal Windows
+* **Terminal 1 (Backend):**
+  ```bash
+  npm run server
+  ```
+* **Terminal 2 (Frontend):**
+  ```bash
+  npm run dev
+  ```
 
 Then open your browser and navigate to:
 👉 **[http://localhost:5173/](http://localhost:5173/)**
-
-### 3. Build for Production (Optional)
-```bash
-npm run build
-npm run preview
-```
 
 ---
 
 ## ✨ Features Implemented
 
-1. **"Save Food, Create Meals" Home Page & Hero:**
-   - Features the required title and a clear mission statement.
-   - Highlights community zero-waste goals, money-saving estimates, and kitchen safety.
+1. **Google Gemma 4 AI Recipe Generation:**
+   - Uses the open-weight model `gemma-4-26b-a4b-it` (or `gemma-4-31b-it`) via Google's Gemini API.
+   - Takes user-entered leftover ingredients and optional expiry dates to formulate brand-new zero-waste recipes.
+   - Clearly displays recipe title, preparation time, cooking time, step-by-step instructions, usable ingredients, and missing staples.
+   - Includes real-time loading indicators, helpful error messages, and input validation.
 
-2. **Comma-Separated Ingredient Input Box:**
+2. **Guaranteed Safe Fallback (Clearly Labeled):**
+   - If the backend is offline or `GEMINI_API_KEY` is not provided, the application automatically displays a fallback zero-waste recipe.
+   - Fallback recipes are **explicitly labeled** as `FALLBACK RECIPE (NON-AI GENERATED)` so evaluators can clearly see the distinction.
+
+3. **Strict Food Safety Standards:**
+   - Adheres to the principle: **Never eat spoiled food; discard unsafe ingredients.**
+   - Explicitly warns that an ingredient is **NOT guaranteed safe just because it has not reached its expiry date**. Storage conditions, broken seals, and microbial growth can spoil food earlier.
+   - "When in doubt, throw it out!" rule and 3-senses freshness check (sight, smell, texture).
+
+4. **"Save Food, Create Meals" Home Page & Hero:**
+   - Features the required title, mission statement, and quick navigation.
+   - Zero-waste community counter and money-saving statistics.
+
+5. **Comma-Separated Ingredient Input Box:**
    - Users can type ingredients separated by commas (e.g. `bread, eggs, potatoes, tomatoes`).
    - Dynamic tag badges with one-click `(X)` removal.
    - Quick-add buttons for everyday pantry staples (`+ Bread`, `+ Eggs`, `+ Potatoes`, `+ Tomatoes`, `+ Milk`, `+ Cheese`, `+ Onions`, etc.).
-   - Includes a **"Load from 'Use Soon' Shelf"** button to automatically import ingredients nearing expiration.
+   - Includes a **"Load from 'Use Soon' Shelf"** button.
 
-3. **Functional "Find Recipes" Button & Matching Engine:**
-   - Real algorithmic matching between entered ingredients and recipe requirements.
-   - Handles singular vs. plural terms (`egg` / `eggs`, `potato` / `potatoes`, `tomato` / `tomatoes`).
-   - Handles ingredient aliases (`bread` matches `toast` or `baguette`; `milk` matches `dairy` or `oat milk`).
+6. **16 Curated Built-in Zero-Waste Recipes:**
+   - Instant recipe library (French toast, Spanish tortilla, fried rice, frittata, quesadilla, chowder) that functions without external calls.
+   - Highlights **"You Can Use"** (green pills `✓`) and **"Missing Ingredients"** (amber pills `+`).
 
-4. **Detailed Recipe Cards:**
-   - Displays recipe title, photo, category, and total cooking time.
-   - **Show which ingredients the user can use:** Highlighted with green badges (`✓ bread`, `✓ eggs`).
-   - **Show which ingredients are missing:** Highlighted with amber badges (`+ cheese`, `+ butter`).
-   - Match status indicator (`100% Ready to Cook!`, `Missing 1 item`, etc.).
-
-5. **Step-by-Step Cooking Modal:**
-   - Click **"View Recipe"** on any card to see full measurements, numbered cooking steps, chef zero-waste tips, and recipe-specific food safety warnings.
-   - **"I Cooked This Meal!"** button updates the interactive community food rescue counter.
-
-6. **"Use Soon" Expiry Tracker Shelf:**
-   - Pre-populated with realistic perishable items (e.g. milk, bread, eggs, spinach, tomatoes, bananas).
-   - Color-coded urgency badges:
-     - 🔴 **Red:** Expiring in 1 day or today.
-     - 🟠 **Orange:** Expiring in 2–3 days.
-     - 🟢 **Green:** Expiring in 4+ days.
-   - One-click **"Use in Recipe"** button to immediately insert the item into the search box.
-   - Add new custom pantry items with days remaining and quantities.
-   - "Cooked / Remove" action button.
-
-7. **Mandatory Food Safety Standards:**
-   - **Critical Warning Banner:** Warns that an ingredient is *not* guaranteed safe just because it has not reached its printed expiry date.
-   - **The 3 Senses Check:** Visual inspection for mold, odor check, and texture check.
-   - **The Bread & Soft Food Rule:** Strict warning that mold roots penetrate deep—never just cut off mold from bread or soft cheese.
-   - **The Golden Rule:** *"When in doubt, throw it out!"* Never taste test suspicious food.
-
-8. **Aesthetics & Responsive Design:**
-   - Rich modern design utilizing warm cream surfaces (`#FCFAF6`, `#F6F2EA`) and fresh forest & emerald greens (`#1B4332`, `#2D6A4F`, `#40916C`, `#D8F3DC`).
-   - Styled using custom CSS with glassmorphism, responsive grids, and Google Fonts (`Outfit` & `Plus Jakarta Sans`).
+7. **"Use Soon" Expiry Tracker Shelf:**
+   - Tracks perishable pantry items with color-coded urgency badges (🔴 1 day, 🟠 2–3 days, 🟢 4+ days).
+   - One-click **"Use in Recipe"** button to add items into the search box.
 
 ---
 
-## 📁 Project Structure
+## 📁 Project Architecture & Changed Files
 
 ```
 SaveMyFood/
-├── index.html                   # HTML entry point with fonts & meta
-├── package.json                 # Project dependencies & scripts
-├── vite.config.js               # Vite configuration
-├── public/
-│   └── favicon.svg              # Custom eco-friendly SVG logo
+├── .env.example                 # Template for GEMINI_API_KEY (New)
+├── .gitignore                   # Updated to ignore .env and secrets
+├── package.json                 # Added express, cors, dotenv, concurrently, and scripts
+├── vite.config.js               # Added proxy for /api -> localhost:3001
+├── server/
+│   └── server.js                # Secure Node/Express backend calling Gemma 4 via Gemini API (New)
 └── src/
-    ├── main.jsx                 # React root mounting
-    ├── App.jsx                  # Main application state & layout
-    ├── index.css                # Global green & cream design system
-    ├── data/
-    │   ├── recipes.js           # 16 zero-waste recipes with instructions
-    │   └── initialUseSoon.js    # Default near-expiry pantry items
-    ├── utils/
-    │   └── ingredientMatcher.js # Normalization and matching algorithm
-    └── components/
-        ├── Navbar.jsx           # Top navigation bar
-        ├── Hero.jsx             # Hero title & description
-        ├── IngredientInput.jsx  # Comma-separated input & quick pills
-        ├── UseSoonShelf.jsx     # Expiry tracker shelf & safety banner
-        ├── RecipeList.jsx       # Filter tabs & recipe grid
-        ├── RecipeCard.jsx       # Card displaying usable vs missing ingredients
-        ├── RecipeModal.jsx      # Step-by-step cooking modal
-        ├── SafetyGuide.jsx      # Food safety guide & spoilage rules
-        ├── ImpactTracker.jsx    # Rescued meals & savings counter
-        └── Footer.jsx           # Student demo disclaimer & safety note
+    ├── services/
+    │   └── gemmaService.js      # Frontend service calling backend with labeled fallback (Updated)
+    ├── components/
+    │   ├── GemmaAiChef.jsx      # Gemma 4 UI with loading state, errors, and fallback badge (Updated)
+    │   ├── Hero.jsx             # Updated with Gemma 4 details
+    │   ├── Navbar.jsx           # Updated with navigation link to Gemma AI
+    │   └── ... (all existing components preserved)
 ```
